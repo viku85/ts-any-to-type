@@ -19,16 +19,55 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
 
-      const { range } = args;
-      const document = editor.document;
+      const { document, range } = args;
       const sourceCode = document.getText();
 
-      const inferredType = inferTypeUsingEstree(sourceCode, range);
+      let expandedRange = range;
+      if (range.start.isEqual(range.end)) {
+        // Expand the range to cover the word 'any' if the cursor is within it
+        const wordRange = document.getWordRangeAtPosition(
+          range.start,
+          /\bany\b/
+        );
+        if (wordRange) {
+          expandedRange = wordRange;
+          console.log(
+            `[DEBUG] Expanded range to: Start(${wordRange.start.line}, ${wordRange.start.character}), End(${wordRange.end.line}, ${wordRange.end.character})`
+          );
+        } else {
+          console.error(
+            `[ERROR] Could not expand the range to the word 'any'.`
+          );
+          vscode.window.showErrorMessage(
+            "Failed to find 'any' at the cursor position."
+          );
+          return;
+        }
+      }
+
+      const selectedText = document.getText(expandedRange).trim();
+      console.log(`[DEBUG] Selected text: '${selectedText}'`);
+      if (selectedText !== "any") {
+        console.error(
+          `[ERROR] The selected text '${selectedText}' is not 'any', skipping replacement.`
+        );
+        vscode.window.showErrorMessage("The selected text is not 'any'.");
+        return;
+      }
+
+      const inferredType = inferTypeUsingEstree(sourceCode, expandedRange);
       if (inferredType) {
+        console.log(
+          `[DEBUG] Replacing 'any' with inferred type: '${inferredType}'`
+        );
         await editor.edit((editBuilder) => {
-          editBuilder.replace(range, inferredType);
+          console.log(
+            `[DEBUG] Replacing text at range: ${expandedRange.start.line}:${expandedRange.start.character} to ${expandedRange.end.line}:${expandedRange.end.character}`
+          );
+          editBuilder.replace(expandedRange, inferredType);
         });
       } else {
+        console.error(`[ERROR] Failed to infer a specific type for 'any'.`);
         vscode.window.showErrorMessage(
           "Failed to infer a specific type for 'any'."
         );
