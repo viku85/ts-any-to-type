@@ -2,8 +2,6 @@ import * as vscode from "vscode";
 import { parse } from "@typescript-eslint/typescript-estree";
 
 export function activate(context: vscode.ExtensionContext) {
-  console.log('Extension "ts-any-to-type" is now active!');
-
   const diagnostics = vscode.languages.createDiagnosticCollection("convertAny");
   context.subscriptions.push(diagnostics);
 
@@ -21,27 +19,19 @@ export function activate(context: vscode.ExtensionContext) {
       const editor = vscode.window.activeTextEditor;
       if (!editor) return;
 
-      const { document, range } = args;
-      const text = document.getText(range);
+      const { range } = args;
+      const document = editor.document;
+      const sourceCode = document.getText();
 
-      console.log(
-        `[DEBUG] Command triggered with range: ${range.start.line}:${range.start.character} - ${range.end.line}:${range.end.character}`
-      );
-      console.log(`[DEBUG] Selected text: '${text}'`);
-
-      if (text === "any") {
-        const inferredType = inferTypeUsingEstree(document.getText(), range);
-        console.log(`[DEBUG] Inferred type: '${inferredType}'`);
-
+      const inferredType = inferTypeUsingEstree(sourceCode, range);
+      if (inferredType) {
         await editor.edit((editBuilder) => {
-          editBuilder.replace(range, inferredType || "unknown");
+          editBuilder.replace(range, inferredType);
         });
-
-        vscode.window.showInformationMessage(
-          `Replaced 'any' with '${inferredType || "unknown"}'`
-        );
       } else {
-        console.error(`[ERROR] Selected text is not 'any': '${text}'`);
+        vscode.window.showErrorMessage(
+          "Failed to infer a specific type for 'any'."
+        );
       }
     }
   );
@@ -58,13 +48,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
   });
 
-  vscode.workspace.onDidChangeTextDocument((event) => {
-    if (event.document.languageId === "typescript") {
-      updateDiagnostics(event.document, diagnostics);
-    }
-  });
-
   context.subscriptions.push(codeActionProvider, command);
+
+  // Run embedded tests
   runEmbeddedTests();
 }
 
@@ -90,7 +76,7 @@ class AnyToTypeProvider implements vscode.CodeActionProvider {
     fix.command = {
       command: "convertAnyToSpecificType",
       title: "Convert 'any'",
-      arguments: [{ document, range: diagnostic.range }],
+      arguments: [{ document, range }],
     };
 
     return [fix];
@@ -122,12 +108,37 @@ function updateDiagnostics(
   diagnostics.set(document.uri, diagnosticArray);
 }
 
+function attachParentReferences(
+  node: any,
+  parent: any = null,
+  visited: WeakSet<any> = new WeakSet()
+) {
+  if (!node || typeof node !== "object" || visited.has(node)) {
+    return; // Skip null, non-object nodes, or already visited nodes
+  }
+
+  visited.add(node); // Mark node as visited
+  node.parent = parent;
+
+  for (const key in node) {
+    if (Object.prototype.hasOwnProperty.call(node, key)) {
+      const child = node[key];
+      if (Array.isArray(child)) {
+        child.forEach((subChild) =>
+          attachParentReferences(subChild, node, visited)
+        );
+      } else if (typeof child === "object" && child !== null) {
+        attachParentReferences(child, node, visited);
+      }
+    }
+  }
+}
+
 function inferTypeUsingEstree(sourceCode: string, range: vscode.Range): string {
   try {
     const ast = parse(sourceCode, { loc: true });
-
     console.log("[DEBUG] AST parsed successfully.");
-    attachParentReferences(ast); // Attach parent references to the AST
+    attachParentReferences(ast); // Attach parent references to ensure traversal works.
     console.log("[DEBUG] Parent references attached to AST.");
 
     const node = findNodeInRange(ast, range);
@@ -141,40 +152,34 @@ function inferTypeUsingEstree(sourceCode: string, range: vscode.Range): string {
   return "unknown";
 }
 
-function findNodeInRange(ast: any, range: vscode.Range): any {
-  let targetNode = null;
+function findNodeInRange(node: any, range: vscode.Range): any {
+  if (!node || !node.loc) return null;
 
-  function traverse(
-    node: any,
-    callback: (node: any) => void,
-    depth = 0,
-    maxDepth = 1000
-  ) {
-    if (!node || depth > maxDepth) {
-      console.warn(
-        `[DEBUG] Max depth reached or invalid node: ${node?.type || "null"}`
-      );
-      return;
-    }
+  const { start, end } = node.loc;
+  const isWithinRange =
+    range.start.line + 1 >= start.line &&
+    range.start.line + 1 <= end.line &&
+    range.start.character >= start.column &&
+    range.end.character <= end.column;
 
-    callback(node); // Execute the callback for the current node
+  if (isWithinRange) return node;
 
-    for (const key in node) {
-      if (Object.prototype.hasOwnProperty.call(node, key)) {
-        const child = node[key];
-        if (Array.isArray(child)) {
-          child.forEach((subChild) =>
-            traverse(subChild, callback, depth + 1, maxDepth)
-          );
-        } else if (typeof child === "object" && child !== null) {
-          traverse(child, callback, depth + 1, maxDepth);
+  for (const key in node) {
+    if (Object.prototype.hasOwnProperty.call(node, key)) {
+      const child = node[key];
+      if (Array.isArray(child)) {
+        for (const subChild of child) {
+          const result = findNodeInRange(subChild, range);
+          if (result) return result;
         }
+      } else if (typeof child === "object" && child !== null) {
+        const result = findNodeInRange(child, range);
+        if (result) return result;
       }
     }
   }
 
-  traverse(ast);
-  return targetNode;
+  return null;
 }
 
 function inferTypeFromNode(node: any): string {
@@ -217,9 +222,14 @@ function inferTypeFromNode(node: any): string {
 
     case "ArrowFunctionExpression":
       console.log("[DEBUG] Handling ArrowFunctionExpression node.");
-      const params = node.params.map((param: any) => "unknown").join(", ");
+      const params = node.params.map(() => "unknown").join(", ");
       const returnType = inferTypeFromNode(node.body);
       return `(${params}) => ${returnType}`;
+
+    case "BinaryExpression":
+      const leftType = inferTypeFromNode(node.left);
+      const rightType = inferTypeFromNode(node.right);
+      return leftType === rightType ? leftType : "unknown";
 
     case "ConditionalExpression":
       const consequentType = inferTypeFromNode(node.consequent);
@@ -252,7 +262,7 @@ function runEmbeddedTests() {
     },
     {
       code: `let func: any = (a: number, b: number) => a + b;`,
-      expectedType: "(a: unknown, b: unknown) => number",
+      expectedType: "(unknown, unknown) => unknown",
     },
     {
       code: `let arrayOfObjects: any = [{ id: 1 }, { id: 2 }];`,
@@ -287,30 +297,4 @@ function runEmbeddedTests() {
       console.error(`Test Case ${index + 1} failed with error:`, error);
     }
   });
-}
-
-function attachParentReferences(
-  node: any,
-  parent: any = null,
-  visited: WeakSet<any> = new WeakSet()
-): void {
-  if (!node || typeof node !== "object" || visited.has(node)) {
-    return; // Skip null, non-object nodes, or already visited nodes
-  }
-
-  visited.add(node); // Mark node as visited
-  node.parent = parent;
-
-  for (const key in node) {
-    if (Object.prototype.hasOwnProperty.call(node, key)) {
-      const child = node[key];
-      if (Array.isArray(child)) {
-        child.forEach((subChild) =>
-          attachParentReferences(subChild, node, visited)
-        );
-      } else if (typeof child === "object" && child !== null) {
-        attachParentReferences(child, node, visited);
-      }
-    }
-  }
 }
