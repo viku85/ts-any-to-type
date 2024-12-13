@@ -152,28 +152,40 @@ function inferTypeUsingEstree(sourceCode: string, range: vscode.Range): string {
   return "unknown";
 }
 
-function findNodeInRange(node: any, range: vscode.Range): any {
-  if (!node || !node.loc) return null;
+function findNodeInRange(
+  node: any,
+  range: vscode.Range,
+  visited: WeakSet<any> = new WeakSet()
+): any {
+  if (!node || visited.has(node)) {
+    // Prevent infinite recursion by checking if the node was already visited
+    return null;
+  }
+  visited.add(node);
 
-  const { start, end } = node.loc;
-  const isWithinRange =
-    range.start.line + 1 >= start.line &&
-    range.start.line + 1 <= end.line &&
-    range.start.character >= start.column &&
-    range.end.character <= end.column;
+  if (node.loc) {
+    const { start, end } = node.loc;
+    const isWithinRange =
+      range.start.line + 1 >= start.line &&
+      range.start.line + 1 <= end.line &&
+      range.start.character >= start.column &&
+      range.end.character <= end.column;
 
-  if (isWithinRange) return node;
+    if (isWithinRange) {
+      return node;
+    }
+  }
 
   for (const key in node) {
     if (Object.prototype.hasOwnProperty.call(node, key)) {
       const child = node[key];
       if (Array.isArray(child)) {
         for (const subChild of child) {
-          const result = findNodeInRange(subChild, range);
+          const result = findNodeInRange(subChild, range, visited);
           if (result) return result;
         }
       } else if (typeof child === "object" && child !== null) {
-        const result = findNodeInRange(child, range);
+        const result = findNodeInRange(child, range, visited);
         if (result) return result;
       }
     }
@@ -189,29 +201,24 @@ function inferTypeFromNode(node: any): string {
 
   switch (node.type) {
     case "VariableDeclaration":
-      console.log("[DEBUG] Handling VariableDeclaration node.");
       return node.declarations
         .map((declarator: any) => inferTypeFromNode(declarator.init))
-        .join(" | "); // Join types for multiple declarators.
-
-    case "VariableDeclarator":
-      console.log("[DEBUG] Handling VariableDeclarator node.");
-      return inferTypeFromNode(node.init);
-
+        .join(" | ");
     case "Literal":
       if (typeof node.value === "string") return "string";
       if (typeof node.value === "number") return "number";
       if (typeof node.value === "boolean") return "boolean";
+      if (node.value === null) return "null";
       break;
-
     case "ArrayExpression":
       const elementTypes = new Set(
-        node.elements.map((el: any) => inferTypeFromNode(el))
+        node.elements
+          .filter((el: any) => el !== null)
+          .map((el: any) => inferTypeFromNode(el))
       );
       return elementTypes.size === 1
         ? `${[...elementTypes][0]}[]`
         : `Array<${[...elementTypes].join(" | ")}>`;
-
     case "ObjectExpression":
       const properties = node.properties.map((prop: any) => {
         const key = prop.key.name || prop.key.value;
@@ -219,32 +226,37 @@ function inferTypeFromNode(node: any): string {
         return `${key}: ${valueType}`;
       });
       return `{ ${properties.join("; ")} }`;
-
     case "ArrowFunctionExpression":
-      console.log("[DEBUG] Handling ArrowFunctionExpression node.");
-      const params = node.params.map(() => "unknown").join(", ");
+      const params = node.params
+        .map((param: any) => {
+          if (param.type === "Identifier") return `${param.name}: unknown`;
+          return inferTypeFromNode(param);
+        })
+        .join(", ");
       const returnType = inferTypeFromNode(node.body);
       return `(${params}) => ${returnType}`;
-
     case "BinaryExpression":
       const leftType = inferTypeFromNode(node.left);
       const rightType = inferTypeFromNode(node.right);
-      return leftType === rightType ? leftType : "unknown";
-
+      return leftType === rightType ? leftType : `${leftType} | ${rightType}`;
     case "ConditionalExpression":
       const consequentType = inferTypeFromNode(node.consequent);
       const alternateType = inferTypeFromNode(node.alternate);
       return `${consequentType} | ${alternateType}`;
-
     case "CallExpression":
-      if (node.callee.name === "getElementById") return "HTMLElement | null";
-      break;
-
+      if (
+        node.callee.type === "MemberExpression" &&
+        node.callee.object.name === "document"
+      ) {
+        if (node.callee.property.name === "getElementById") {
+          return "HTMLElement | null";
+        }
+      }
+      return "unknown";
     default:
       console.log(`[DEBUG] Unhandled node type: ${node.type}`);
       break;
   }
-
   return "unknown";
 }
 
