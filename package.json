@@ -1,15 +1,29 @@
 {
   "name": "ts-any-to-type",
-  "displayName": "ts-any-to-type",
-  "description": "VS Code extension to convert existing any to specific typed interface",
+  "displayName": "TS Any to Type",
+  "description": "Automatically infer and replace 'any' with specific types in TypeScript code.",
   "version": "0.0.1",
-  "publisher": "Vikash Kumar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/viku85/ts-any-to-type.git"
+  },
+  "author": {
+    "name": "Vikash Kumar",
+    "email": "viku85@gmail.com"
+  },
+  "publisher": "VikashKumar85",
+  "license": "MIT",
+  "keywords": [
+    "typescript",
+    "type inference",
+    "typescript refactor"
+  ],
   "engines": {
     "vscode": "^1.95.0"
   },
   "categories": [
     "Programming Languages",
-    "TypeScript"
+    "Linters"
   ],
   "activationEvents": [
     "onLanguage:typescript",

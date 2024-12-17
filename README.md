@@ -1,71 +1,87 @@
 # ts-any-to-type README
 
-This is the README for your extension "ts-any-to-type". After writing up a brief description, we recommend including the following sections.
+Automatically infer and replace `any` in TypeScript code with specific types.
 
 ## Features
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+- Automatically replace `any` with inferred types in TypeScript.
+- Supports nested objects, arrays, and functions.
+- Easy integration with VS Code Lightbulb suggestions.
+- Test your code changes with embedded unit testing.
+- Extensible with class-based inference for new scenarios.
 
-For example if there is an image subfolder under your extension project workspace:
+## Installation
 
-\!\[feature X\]\(images/feature-x.png\)
+1. Open VS Code.
+2. Go to the Extensions Marketplace (Ctrl+Shift+X).
+3. Search for `TS-Any-to-Type`.
+4. Click `Install`.
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+## Usage
 
-## Requirements
+1. Hover over a TypeScript `any` type.
+2. Click the lightbulb suggestion or run the command `Convert Any to Specific Type`.
+3. View the inferred type and confirm to replace it in your code.
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+### Example
 
-## Extension Settings
+Before:
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+```typescript
+let obj: any = { name: "John", age: 30 };
+```
 
-For example:
+Before:
 
-This extension contributes the following settings:
+```typescript
+let obj: { name: string; age: number } = { name: "John", age: 30 };
+```
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+## Test Cases
+
+| Code                                           | Expected Type           | Result |
+| ---------------------------------------------- | ----------------------- | ------ |
+| `let x: any = "text";`                         | `string`                | ✅     |
+| `let y: any = [1, 2, 3];`                      | `number[]`              | ✅     |
+| `let z: any = { id: 123 };`                    | `{ id: number }`        | ✅     |
+| `let a: any = Math.random() > 0.5 ? "A" : 42;` | `string \| number`      | ✅     |
+| `onChange(value: any) {}`                      | `{ property: unknown }` | ✅     |
+
+## Supported Scenarios
+
+- Simple variable declarations:
+  ```typescript
+  let x: any = "text";
+  ```
+- Nested object structures:
+
+```typescript
+Copy code
+let obj: any = { name: "Alice", age: 25 };
+```
+
+Functions:
+
+```typescript
+Copy code
+let func: any = (a: number, b: number) => a + b;
+```
+
+## Roadmap
+
+- Support for complex conditional types.
+- Customizable inference rules.
+- Improved performance for large files.
 
 ## Known Issues
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
+- Cannot infer types from dynamic object properties.
+- Limited support for union and intersection types in deeply nested structures.
 
-## Release Notes
+## Contributing
 
-Users appreciate release notes as you update your extension.
+We welcome contributions! Please fork the repository and submit a pull request with your changes.
 
-### 1.0.0
+## Feedback
 
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
-
----
-
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+Please report any issues [here](https://github.com/your-repo/ts-any-to-type/issues).
